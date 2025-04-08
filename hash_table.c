@@ -1,88 +1,159 @@
 #include "hash_table.h"
-#include "utils.h"
-#include <windows.h>  // For SRWLOCK
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
-hashRecord *hashTable = NULL;
-SRWLOCK table_lock;  // Windows Slim Reader-Writer Lock
+// Head of the linked list
+static hashRecord *head = NULL;
 
-void initialize_table_lock() {
-    InitializeSRWLock(&table_lock);
+// Synchronization primitives
+pthread_rwlock_t rwlock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_mutex_t insert_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t insert_done = PTHREAD_COND_INITIALIZER;
+int insert_count = 0;
+
+// Utility to get timestamp
+long get_timestamp() {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;  // Microseconds
 }
 
+// Jenkins's One-at-a-Time Hash Function
+uint32_t jenkins_one_at_a_time_hash(const char *key) {
+    uint32_t hash = 0;
+    while (*key) {
+        hash += (unsigned char)(*key);
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+        key++;
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+
+// Insert or update a record in the hash table
 void insert_record(const char *name, uint32_t salary) {
-    uint32_t hash = jenkins_one_at_a_time_hash((const uint8_t *)name, strlen(name));
+    pthread_rwlock_wrlock(&rwlock);
+    long timestamp = get_timestamp();
+    printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
 
-    AcquireSRWLockExclusive(&table_lock);
-    log_event("WRITE LOCK ACQUIRED");
+    uint32_t hash = jenkins_one_at_a_time_hash(name);
+    hashRecord *curr = head, *prev = NULL;
 
-    hashRecord *current = hashTable;
-    while (current) {
-        if (current->hash == hash) {
-            current->salary = salary;
-            log_command("INSERT", name, salary);
-            ReleaseSRWLockExclusive(&table_lock);
-            log_event("WRITE LOCK RELEASED");
-            return;
-        }
-        current = current->next;
+    while (curr && curr->hash < hash) {
+        prev = curr;
+        curr = curr->next;
     }
 
-    hashRecord *new_node = malloc(sizeof(hashRecord));
-    new_node->hash = hash;
-    strncpy(new_node->name, name, 50);
-    new_node->salary = salary;
-    new_node->next = hashTable;
-    hashTable = new_node;
+    if (curr && curr->hash == hash) {  // Update existing
+        curr->salary = salary;
+    } else {  // Insert new record
+        hashRecord *new_node = malloc(sizeof(hashRecord));
+        new_node->hash = hash;
+        strncpy(new_node->name, name, 50);
+        new_node->salary = salary;
+        new_node->next = curr;
 
-    log_command("INSERT", name, salary);
-    ReleaseSRWLockExclusive(&table_lock);
-    log_event("WRITE LOCK RELEASED");
+        if (prev) {
+            prev->next = new_node;
+        } else {
+            head = new_node;
+        }
+    }
+
+    timestamp = get_timestamp();
+    printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    pthread_rwlock_unlock(&rwlock);
+
+    pthread_mutex_lock(&insert_mutex);
+    insert_count--;
+    if (insert_count == 0) {
+        pthread_cond_broadcast(&insert_done);
+    }
+    pthread_mutex_unlock(&insert_mutex);
 }
 
+// Delete a record
 void delete_record(const char *name) {
-    uint32_t hash = jenkins_one_at_a_time_hash((const uint8_t *)name, strlen(name));
+    pthread_mutex_lock(&insert_mutex);
+    while (insert_count > 0) {
+        long timestamp = get_timestamp();
+        printf("%ld: WAITING ON INSERTS\n", timestamp);
+        pthread_cond_wait(&insert_done, &insert_mutex);
+    }
+    pthread_mutex_unlock(&insert_mutex);
 
-    AcquireSRWLockExclusive(&table_lock);
-    log_event("WRITE LOCK ACQUIRED");
+    pthread_rwlock_wrlock(&rwlock);
+    long timestamp = get_timestamp();
+    printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
 
-    hashRecord *prev = NULL, *current = hashTable;
-    while (current) {
-        if (current->hash == hash) {
-            if (prev) prev->next = current->next;
-            else hashTable = current->next;
-            free(current);
-            log_command("DELETE", name, 0);
-            ReleaseSRWLockExclusive(&table_lock);
-            log_event("WRITE LOCK RELEASED");
-            return;
-        }
-        prev = current;
-        current = current->next;
+    uint32_t hash = jenkins_one_at_a_time_hash(name);
+    hashRecord *curr = head, *prev = NULL;
+
+    while (curr && curr->hash != hash) {
+        prev = curr;
+        curr = curr->next;
     }
 
-    ReleaseSRWLockExclusive(&table_lock);
-    log_event("WRITE LOCK RELEASED");
+    if (curr) {
+        if (prev) {
+            prev->next = curr->next;
+        } else {
+            head = curr->next;
+        }
+        free(curr);
+    }
+
+    timestamp = get_timestamp();
+    printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    pthread_rwlock_unlock(&rwlock);
 }
 
-uint32_t search_record(const char *name) {
-    uint32_t hash = jenkins_one_at_a_time_hash((const uint8_t *)name, strlen(name));
+// Search for a record
+hashRecord* search_record(const char *name) {
+    pthread_rwlock_rdlock(&rwlock);
+    long timestamp = get_timestamp();
+    printf("%ld,READ LOCK ACQUIRED\n", timestamp);
 
-    AcquireSRWLockShared(&table_lock);
-    log_event("READ LOCK ACQUIRED");
+    uint32_t hash = jenkins_one_at_a_time_hash(name);
+    hashRecord *curr = head;
 
-    hashRecord *current = hashTable;
-    while (current) {
-        if (current->hash == hash) {
-            log_command("SEARCH", name, current->salary);
-            ReleaseSRWLockShared(&table_lock);
-            log_event("READ LOCK RELEASED");
-            return current->salary;
+    while (curr) {
+        if (curr->hash == hash) {
+            pthread_rwlock_unlock(&rwlock);
+            return curr;
         }
-        current = current->next;
+        curr = curr->next;
     }
 
-    log_command("SEARCH", name, 0);
-    ReleaseSRWLockShared(&table_lock);
-    log_event("READ LOCK RELEASED");
-    return 0;
+    pthread_rwlock_unlock(&rwlock);
+    return NULL;
+}
+
+// Print the hash table to a file
+void print_table_to_file(const char *filename) {
+    pthread_rwlock_rdlock(&rwlock);
+    FILE *fp = fopen(filename, "w");
+
+    hashRecord *curr = head;
+    while (curr) {
+        fprintf(fp, "%u,%s,%u\n", curr->hash, curr->name, curr->salary);
+        curr = curr->next;
+    }
+    fclose(fp);
+    pthread_rwlock_unlock(&rwlock);
+}
+
+// Free the hash table memory
+void free_table() {
+    hashRecord *curr = head;
+    while (curr) {
+        hashRecord *temp = curr;
+        curr = curr->next;
+        free(temp);
+    }
 }

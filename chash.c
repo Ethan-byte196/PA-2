@@ -1,58 +1,63 @@
+#include "hash_table.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include <string.h>
-#include <windows.h>  // For Windows threading
-#include "command_processor.h"
+
+#define MAX_COMMANDS 100
+#define MAX_LINE_LENGTH 100
+
+typedef struct {
+    char operation[10];
+    char name[50];
+    uint32_t salary;
+} Command;
+
+Command commands[MAX_COMMANDS];
+int command_count = 0;
+
+void *execute_command(void *arg) {
+    Command *cmd = (Command *)arg;
+
+    if (strcmp(cmd->operation, "insert") == 0) {
+        insert_record(cmd->name, cmd->salary);
+    } else if (strcmp(cmd->operation, "delete") == 0) {
+        delete_record(cmd->name);
+    } else if (strcmp(cmd->operation, "search") == 0) {
+        hashRecord *result = search_record(cmd->name);
+        if (result) {
+            printf("%u,%s,%u\n", result->hash, result->name, result->salary);
+        } else {
+            printf("No Record Found\n");
+        }
+    }
+    return NULL;
+}
 
 int main() {
-    FILE *file = fopen("commands.txt", "r");
-    if (!file) {
-        perror("Error opening commands.txt");
-        return EXIT_FAILURE;
+    FILE *fp = fopen("commands.txt", "r");
+    if (!fp) {
+        perror("Failed to open commands.txt");
+        return 1;
     }
 
-    initialize_table(); // Initialize the hash table
+    char line[MAX_LINE_LENGTH];
+    while (fgets(line, sizeof(line), fp)) {
+        sscanf(line, "%[^,],%49[^,],%u", commands[command_count].operation, 
+               commands[command_count].name, &commands[command_count].salary);
+        command_count++;
+    }
+    fclose(fp);
 
-    int num_threads;
-    fscanf(file, "threads,%d,0\n", &num_threads); // Read thread count
-
-    HANDLE *threads = malloc(num_threads * sizeof(HANDLE));  // Dynamic memory allocation for thread handles
-    if (!threads) {
-        perror("Memory allocation failed");
-        fclose(file);
-        return EXIT_FAILURE;
+    pthread_t threads[command_count];
+    for (int i = 0; i < command_count; i++) {
+        pthread_create(&threads[i], NULL, execute_command, &commands[i]);
+    }
+    for (int i = 0; i < command_count; i++) {
+        pthread_join(threads[i], NULL);
     }
 
-    char command[100];
-    int thread_index = 0;
-
-    while (fgets(command, sizeof(command), file)) {
-        command[strcspn(command, "\n")] = 0; // Remove newline
-
-        // Create a new thread for each command
-        threads[thread_index] = (HANDLE)_beginthreadex(NULL, 0, (unsigned (__stdcall *)(void *))process_command, strdup(command), 0, NULL);
-        if (threads[thread_index] == 0) {
-            perror("Thread creation failed");
-            fclose(file);
-            free(threads);
-            return EXIT_FAILURE;
-        }
-
-        thread_index++;
-    }
-
-    fclose(file);
-
-    // Wait for all threads to complete
-    WaitForMultipleObjects(thread_index, threads, TRUE, INFINITE);
-
-    // Close thread handles and free memory
-    for (int i = 0; i < thread_index; i++) {
-        CloseHandle(threads[i]);
-    }
-    free(threads);
-
-    print_final_summary(); // Print final hash table state
-
+    print_table_to_file("output.txt");
+    free_table();
     return 0;
 }

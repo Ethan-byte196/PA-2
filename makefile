@@ -1,22 +1,17 @@
 CC = gcc
-CFLAGS = -pthread -Wall -Wextra
+CFLAGS = -Wall -pthread -g
+OBJ = chash.o hash_table.o
 
-OBJS = chash.o hash_table.o command_processor.o utils.o
+all: chash
 
-chash: $(OBJS)
-	$(CC) $(CFLAGS) -o chash $(OBJS)
+chash: $(OBJ)
+	$(CC) $(CFLAGS) -o chash $(OBJ)
 
-chash.o: chash.c command_processor.h
+chash.o: chash.c hash_table.h
 	$(CC) $(CFLAGS) -c chash.c
 
-hash_table.o: hash_table.c hash_table.h utils.h
+hash_table.o: hash_table.c hash_table.h
 	$(CC) $(CFLAGS) -c hash_table.c
 
-command_processor.o: command_processor.c command_processor.h hash_table.h
-	$(CC) $(CFLAGS) -c command_processor.c
-
-utils.o: utils.c utils.h
-	$(CC) $(CFLAGS) -c utils.c
-
 clean:
-	rm -f chash $(OBJS) output.txt
+	rm -f chash *.o output.txt
