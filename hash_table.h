@@ -20,9 +20,9 @@ extern int insert_count;
 
 // Function prototypes
 uint32_t jenkins_one_at_a_time_hash(const char *key);
-void insert_record(const char *name, uint32_t salary);
-void delete_record(const char *name);
-hashRecord* search_record(const char *name);
+void insert_record(const char *name, uint32_t salary, const char* filename);
+void delete_record(const char *name, const char* filename);
+hashRecord* search_record(const char *name, const char* filename);
 void print_table_to_file(const char *filename);
 void free_table();
 

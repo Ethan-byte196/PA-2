@@ -20,11 +20,11 @@ void *execute_command(void *arg) {
     Command *cmd = (Command *)arg;
 
     if (strcmp(cmd->operation, "insert") == 0) {
-        insert_record(cmd->name, cmd->salary);
+        insert_record(cmd->name, cmd->salary,"output.txt");
     } else if (strcmp(cmd->operation, "delete") == 0) {
-        delete_record(cmd->name);
+        delete_record(cmd->name,"output.txt");
     } else if (strcmp(cmd->operation, "search") == 0) {
-        hashRecord *result = search_record(cmd->name);
+        hashRecord *result = search_record(cmd->name,"output.txt");
         if (result) {
             printf("%u,%s,%u\n", result->hash, result->name, result->salary);
         } else {
