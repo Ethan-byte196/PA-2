@@ -36,10 +36,11 @@ uint32_t jenkins_one_at_a_time_hash(const char *key) {
 }
 
 // Insert or update a record in the hash table
-void insert_record(const char *name, uint32_t salary) {
+void insert_record(const char *name, uint32_t salary, const char* filename) {
     pthread_rwlock_wrlock(&rwlock);
     long timestamp = get_timestamp();
-    printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
+    FILE *fp = fopen(filename, "w");
+    fprintf(fp,"%ld,WRITE LOCK ACQUIRED\n", timestamp);
 
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head, *prev = NULL;
@@ -66,7 +67,8 @@ void insert_record(const char *name, uint32_t salary) {
     }
 
     timestamp = get_timestamp();
-    printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    fprintf(fp,"%ld,WRITE LOCK RELEASED\n", timestamp);
+    fp.close();
     pthread_rwlock_unlock(&rwlock);
 
     pthread_mutex_lock(&insert_mutex);
@@ -78,18 +80,19 @@ void insert_record(const char *name, uint32_t salary) {
 }
 
 // Delete a record
-void delete_record(const char *name) {
+void delete_record(const char *name, const char *filename) {
     pthread_mutex_lock(&insert_mutex);
+    FILE *fp = fopen(filename, "w");
     while (insert_count > 0) {
         long timestamp = get_timestamp();
-        printf("%ld: WAITING ON INSERTS\n", timestamp);
+        fprintf(fp,"%ld: WAITING ON INSERTS\n", timestamp);
         pthread_cond_wait(&insert_done, &insert_mutex);
     }
     pthread_mutex_unlock(&insert_mutex);
 
     pthread_rwlock_wrlock(&rwlock);
     long timestamp = get_timestamp();
-    printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
+    fprintf(fp,"%ld,WRITE LOCK ACQUIRED\n", timestamp);
 
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head, *prev = NULL;
@@ -109,16 +112,18 @@ void delete_record(const char *name) {
     }
 
     timestamp = get_timestamp();
-    printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    fprintf(fp,"%ld,WRITE LOCK RELEASED\n", timestamp);
+    fp.close();
     pthread_rwlock_unlock(&rwlock);
 }
 
 // Search for a record
-hashRecord* search_record(const char *name) {
+hashRecord* search_record(const char *name, const char* filename) {
     pthread_rwlock_rdlock(&rwlock);
+    FILE *fp = fopen(filename, "w");
     long timestamp = get_timestamp();
-    printf("%ld,READ LOCK ACQUIRED\n", timestamp);
-
+    fprintf(fp,"%ld,READ LOCK ACQUIRED\n", timestamp);
+    fp.close();
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head;
 
