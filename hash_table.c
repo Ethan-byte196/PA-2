@@ -12,6 +12,8 @@ pthread_rwlock_t rwlock = PTHREAD_RWLOCK_INITIALIZER;
 pthread_mutex_t insert_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t insert_done = PTHREAD_COND_INITIALIZER;
 int insert_count = 0;
+int lock_acquired = 0;
+int lock_released = 0;
 
 // Utility to get timestamp
 long get_timestamp() {
@@ -40,7 +42,7 @@ void insert_record(const char *name, uint32_t salary) {
     pthread_rwlock_wrlock(&rwlock);
     long timestamp = get_timestamp();
     printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
-
+    lock_acquired++;
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head, *prev = NULL;
 
@@ -67,6 +69,7 @@ void insert_record(const char *name, uint32_t salary) {
 
     timestamp = get_timestamp();
     printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    lock_released++;
     pthread_rwlock_unlock(&rwlock);
 
     pthread_mutex_lock(&insert_mutex);
@@ -90,7 +93,7 @@ void delete_record(const char *name) {
     pthread_rwlock_wrlock(&rwlock);
     long timestamp = get_timestamp();
     printf("%ld,WRITE LOCK ACQUIRED\n", timestamp);
-
+    lock_acquired++;
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head, *prev = NULL;
 
@@ -110,6 +113,7 @@ void delete_record(const char *name) {
 
     timestamp = get_timestamp();
     printf("%ld,WRITE LOCK RELEASED\n", timestamp);
+    lock_released++;
     pthread_rwlock_unlock(&rwlock);
 }
 
@@ -118,7 +122,7 @@ hashRecord* search_record(const char *name) {
     pthread_rwlock_rdlock(&rwlock);
     long timestamp = get_timestamp();
     printf("%ld,READ LOCK ACQUIRED\n", timestamp);
-
+    lock_acquired++;
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head;
 
@@ -130,6 +134,8 @@ hashRecord* search_record(const char *name) {
         curr = curr->next;
     }
 
+    printf("%ld,READ LOCK RELEASED\n", timestamp);
+    lock_released++;
     pthread_rwlock_unlock(&rwlock);
     return NULL;
 }
@@ -139,6 +145,8 @@ void print_table_to_file(const char *filename) {
     pthread_rwlock_rdlock(&rwlock);
     FILE *fp = fopen(filename, "w");
 
+    fprintf(fp,"Number of lock acquisitions: %d\n",lock_acquired);
+    fprintf(fp,"Number of lock releases: %d\n",lock_released);
     hashRecord *curr = head;
     while (curr) {
         fprintf(fp, "%u,%s,%u\n", curr->hash, curr->name, curr->salary);

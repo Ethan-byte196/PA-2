@@ -17,6 +17,8 @@ extern pthread_rwlock_t rwlock;
 extern pthread_mutex_t insert_mutex;
 extern pthread_cond_t insert_done;
 extern int insert_count;
+extern int lock_acquired;
+extern int lock_released;
 
 // Function prototypes
 uint32_t jenkins_one_at_a_time_hash(const char *key);
