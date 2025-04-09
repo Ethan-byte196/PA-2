@@ -68,7 +68,7 @@ void insert_record(const char *name, uint32_t salary, const char* filename) {
 
     timestamp = get_timestamp();
     fprintf(fp,"%ld,WRITE LOCK RELEASED\n", timestamp);
-    fclose(fp);
+    fp.close();
     pthread_rwlock_unlock(&rwlock);
 
     pthread_mutex_lock(&insert_mutex);
@@ -113,7 +113,7 @@ void delete_record(const char *name, const char *filename) {
 
     timestamp = get_timestamp();
     fprintf(fp,"%ld,WRITE LOCK RELEASED\n", timestamp);
-    fclose(fp);
+    fp.close();
     pthread_rwlock_unlock(&rwlock);
 }
 
@@ -123,7 +123,7 @@ hashRecord* search_record(const char *name, const char* filename) {
     FILE *fp = fopen(filename, "w");
     long timestamp = get_timestamp();
     fprintf(fp,"%ld,READ LOCK ACQUIRED\n", timestamp);
-    fclose(fp);
+    fp.close();
     uint32_t hash = jenkins_one_at_a_time_hash(name);
     hashRecord *curr = head;
 
